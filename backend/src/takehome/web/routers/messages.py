@@ -13,9 +13,15 @@ from starlette.responses import StreamingResponse
 
 from takehome.db.models import Message
 from takehome.db.session import get_session
+from takehome.services.citations import SourceDocument, verify_citations
 from takehome.services.conversation import get_conversation, update_conversation
-from takehome.services.document import get_document_for_conversation
-from takehome.services.llm import chat_with_document, count_sources_cited, generate_title
+from takehome.services.document import list_documents_for_conversation
+from takehome.services.llm import (
+    CitationStreamFilter,
+    chat_with_document,
+    generate_title,
+    parse_citations,
+)
 
 logger = structlog.get_logger()
 
@@ -27,12 +33,20 @@ router = APIRouter(tags=["messages"])
 # --------------------------------------------------------------------------- #
 
 
+class Citation(BaseModel):
+    document_id: str
+    filename: str
+    page: int
+    quote: str
+
+
 class MessageOut(BaseModel):
     id: str
     conversation_id: str
     role: str
     content: str
     sources_cited: int
+    citations: list[Citation] = []
     created_at: datetime
 
     model_config = {"from_attributes": True}
@@ -76,6 +90,7 @@ async def list_messages(
             role=m.role,
             content=m.content,
             sources_cited=m.sources_cited,
+            citations=[Citation(**c) for c in (m.citations or [])],
             created_at=m.created_at,
         )
         for m in messages
@@ -106,9 +121,17 @@ async def send_message(
 
     logger.info("User message saved", conversation_id=conversation_id, message_id=user_message.id)
 
-    # Load document text for the conversation
-    document = await get_document_for_conversation(session, conversation_id)
-    document_text: str | None = document.extracted_text if document else None
+    # Capture document data up front as plain values so the streaming generator
+    # never touches ORM objects after the request session has closed.
+    documents = await list_documents_for_conversation(session, conversation_id)
+    source_documents: list[SourceDocument] = [
+        SourceDocument(id=d.id, filename=d.filename, text=d.extracted_text)
+        for d in documents
+        if d.extracted_text
+    ]
+    document_context: list[tuple[str, str]] = [
+        (d.filename, d.text) for d in source_documents
+    ]
 
     # Load conversation history (exclude the message we just saved, it will be the user_message param)
     stmt = (
@@ -130,16 +153,27 @@ async def send_message(
 
     async def event_stream() -> AsyncIterator[str]:
         """Generate SSE events with the streamed LLM response."""
-        full_response = ""
+        raw_response = ""
+        citation_filter = CitationStreamFilter()
+        errored = False
 
         try:
             async for chunk in chat_with_document(
                 user_message=body.content,
-                document_text=document_text,
+                documents=document_context,
                 conversation_history=conversation_history,
             ):
-                full_response += chunk
-                event_data = json.dumps({"type": "content", "content": chunk})
+                raw_response += chunk
+                # Only surface the prose; the citation block stays hidden.
+                visible = citation_filter.feed(chunk)
+                if visible:
+                    event_data = json.dumps({"type": "content", "content": visible})
+                    yield f"data: {event_data}\n\n"
+
+            # Flush any prose held back behind the delimiter guard.
+            tail = citation_filter.finalize()
+            if tail:
+                event_data = json.dumps({"type": "content", "content": tail})
                 yield f"data: {event_data}\n\n"
 
         except Exception:
@@ -147,13 +181,23 @@ async def send_message(
                 "Error during LLM streaming",
                 conversation_id=conversation_id,
             )
-            error_msg = "I'm sorry, an error occurred while generating a response. Please try again."
-            full_response = error_msg
-            event_data = json.dumps({"type": "content", "content": error_msg})
+            errored = True
+            raw_response = (
+                "I'm sorry, an error occurred while generating a response. "
+                "Please try again."
+            )
+            event_data = json.dumps({"type": "content", "content": raw_response})
             yield f"data: {event_data}\n\n"
 
-        # Count sources cited in the full response
-        sources = count_sources_cited(full_response)
+        # Separate the human-readable answer from the citation block, then verify
+        # each citation against the documents it claims to quote.
+        if errored:
+            answer, raw_citations = raw_response, []
+        else:
+            answer, raw_citations = parse_citations(raw_response)
+        verified = verify_citations(raw_citations, source_documents)
+        citations_payload = [c.to_payload() for c in verified]
+        sources = len(verified)
 
         # Save the assistant message to the database.
         # We need a fresh session since the outer one may have been closed.
@@ -163,8 +207,9 @@ async def send_message(
             assistant_message = Message(
                 conversation_id=conversation_id,
                 role="assistant",
-                content=full_response,
+                content=answer,
                 sources_cited=sources,
+                citations=citations_payload,
             )
             save_session.add(assistant_message)
             await save_session.commit()
@@ -196,6 +241,7 @@ async def send_message(
                         "role": assistant_message.role,
                         "content": assistant_message.content,
                         "sources_cited": assistant_message.sources_cited,
+                        "citations": citations_payload,
                         "created_at": assistant_message.created_at.isoformat(),
                     },
                 }

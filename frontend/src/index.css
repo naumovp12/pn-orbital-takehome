@@ -2,12 +2,60 @@
 @tailwind components;
 @tailwind utilities;
 
+/* Design tokens — "Chambers": a warm-paper, ink-and-ledger system for legal
+   document review. One semantic accent (verified evergreen); everything else is
+   a single warm-neutral voice. Stored as raw oklch channels so Tailwind's
+   /opacity modifiers work via `oklch(var(--token) / <alpha-value>)`. */
+:root {
+	--background: 0.971 0.004 80; /* warm paper */
+	--foreground: 0.21 0.008 75; /* warm ink */
+	--card: 1 0 0;
+	--card-foreground: 0.21 0.008 75;
+	--popover: 1 0 0;
+	--popover-foreground: 0.21 0.008 75;
+	--primary: 0.24 0.012 70; /* ink — active / brand */
+	--primary-foreground: 0.985 0.003 85;
+	--secondary: 0.94 0.006 80;
+	--secondary-foreground: 0.24 0.012 70;
+	--muted: 0.945 0.005 80;
+	--muted-foreground: 0.52 0.012 72; /* quill */
+	--accent: 0.93 0.007 80;
+	--accent-foreground: 0.24 0.012 70;
+	--destructive: 0.52 0.15 30; /* muted brick — delete intent only */
+	--border: 0.905 0.006 80; /* warm hairline */
+	--input: 0.905 0.006 80;
+	--ring: 0.45 0.02 75;
+	--radius: 0.5rem;
+	--sidebar: 0.955 0.006 80; /* light recessed paper */
+	--sidebar-foreground: 0.3 0.01 72;
+	--sidebar-accent: 0.915 0.008 78;
+	--sidebar-accent-foreground: 0.21 0.01 70;
+	--sidebar-ring: 0.45 0.02 75;
+	--verified: 0.5 0.085 155; /* deep evergreen — the only semantic colour */
+	--verified-bg: 0.965 0.02 155;
+	--verified-border: 0.9 0.035 155;
+	--abstain: 0.56 0.07 75; /* quiet warm ochre */
+	--abstain-bg: 0.965 0.018 82;
+	--abstain-border: 0.9 0.035 82;
+	--doc-panel: 0.978 0.004 80;
+	--doc-panel-border: 0.905 0.006 80;
+}
+
+/* Hide scrollbars where v0 used `scrollbar-none` (e.g. the document tab strip). */
+.scrollbar-none {
+	-ms-overflow-style: none;
+	scrollbar-width: none;
+}
+.scrollbar-none::-webkit-scrollbar {
+	display: none;
+}
+
 body {
 	margin: 0;
 	padding: 0;
 	font-family: "IBM Plex Sans", system-ui, sans-serif;
-	background-color: #fafafa;
-	color: #171717;
+	background-color: #f5f4f0;
+	color: #1f1d18;
 	-webkit-font-smoothing: antialiased;
 	-moz-osx-font-smoothing: grayscale;
 }
@@ -27,12 +75,12 @@ body {
 }
 
 ::-webkit-scrollbar-thumb {
-	background-color: #d4d4d4;
+	background-color: #d7d3ca;
 	border-radius: 3px;
 }
 
 ::-webkit-scrollbar-thumb:hover {
-	background-color: #a3a3a3;
+	background-color: #b3aea3;
 }
 
 /* Prose styling for markdown content */
@@ -83,14 +131,14 @@ body {
 .prose code {
 	font-family: "IBM Plex Mono", monospace;
 	font-size: 0.875em;
-	background-color: #f5f5f5;
+	background-color: #f0eee9;
 	padding: 0.125em 0.375em;
 	border-radius: 0.25em;
 }
 
 .prose pre {
-	background-color: #171717;
-	color: #e5e5e5;
+	background-color: #1f1d18;
+	color: #e8e4db;
 	padding: 1em;
 	border-radius: 0.5em;
 	overflow-x: auto;
@@ -104,15 +152,21 @@ body {
 }
 
 .prose blockquote {
-	border-left: 3px solid #d4d4d4;
+	border-left: 3px solid #d7d3ca;
 	padding-left: 1em;
 	margin: 0.75em 0;
-	color: #525252;
+	color: #6f6a62;
 }
 
 .prose a {
-	color: #2563eb;
+	color: #1f1d18;
 	text-decoration: underline;
+	text-underline-offset: 2px;
+	text-decoration-color: #b9b3a7;
+}
+
+.prose a:hover {
+	text-decoration-color: #1f1d18;
 }
 
 .prose table {
@@ -129,6 +183,6 @@ body {
 }
 
 .prose th {
-	background-color: #f5f5f5;
+	background-color: #f0eee9;
 	font-weight: 600;
 }

@@ -14,6 +14,13 @@ from takehome.db.models import Document
 
 logger = structlog.get_logger()
 
+# Maximum number of documents per conversation. The whole-document context is
+# concatenated and sent to the model on every turn, so this cap protects both the
+# token budget and grounding accuracy (avoiding "lost in the middle" with too much
+# context). Surfaced to the user as a friendly limit; blocking rather than silently
+# truncating keeps citation verification trustworthy.
+MAX_DOCUMENTS_PER_CONVERSATION = 5
+
 
 async def upload_document(
     session: AsyncSession, conversation_id: str, file: UploadFile
@@ -23,12 +30,16 @@ async def upload_document(
     Validates the file is a PDF, saves it to disk, extracts text using PyMuPDF,
     and stores metadata in the database.
 
-    Raises ValueError if the conversation already has a document or the file is not a PDF.
+    Raises ValueError if the conversation is at the document limit or the file is
+    not a PDF.
     """
-    # Check if conversation already has a document
-    existing = await get_document_for_conversation(session, conversation_id)
-    if existing is not None:
-        raise ValueError("Conversation already has a document. Only one document per conversation is allowed.")
+    # Enforce the per-conversation document cap
+    existing = await list_documents_for_conversation(session, conversation_id)
+    if len(existing) >= MAX_DOCUMENTS_PER_CONVERSATION:
+        raise ValueError(
+            f"This conversation already has {MAX_DOCUMENTS_PER_CONVERSATION} documents "
+            "(the limit). Remove one or start a new conversation to add more."
+        )
 
     # Validate file type
     if file.content_type not in ("application/pdf", "application/x-pdf"):
@@ -112,3 +123,30 @@ async def get_document_for_conversation(
     stmt = select(Document).where(Document.conversation_id == conversation_id)
     result = await session.execute(stmt)
     return result.scalar_one_or_none()
+
+
+async def list_documents_for_conversation(
+    session: AsyncSession, conversation_id: str
+) -> list[Document]:
+    """List all documents for a conversation, oldest first."""
+    stmt = (
+        select(Document)
+        .where(Document.conversation_id == conversation_id)
+        .order_by(Document.uploaded_at.asc())
+    )
+    result = await session.execute(stmt)
+    return list(result.scalars().all())
+
+
+async def delete_document(session: AsyncSession, document_id: str) -> bool:
+    """Delete a document record. Returns True if it existed and was deleted.
+
+    The underlying file is intentionally left on disk, consistent with the rest of
+    the app (no cascade file cleanup); only the database row is removed.
+    """
+    document = await get_document(session, document_id)
+    if document is None:
+        return False
+    await session.delete(document)
+    await session.commit()
+    return True
