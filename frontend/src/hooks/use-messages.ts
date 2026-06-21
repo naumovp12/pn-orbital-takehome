@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import * as api from "../lib/api";
-import type { Message } from "../types";
+import { type Message, MessageSchema } from "../types";
 
 export function useMessages(conversationId: string | null) {
 	const [messages, setMessages] = useState<Message[]>([]);
@@ -46,6 +46,7 @@ export function useMessages(conversationId: string | null) {
 				role: "user",
 				content,
 				sources_cited: 0,
+				citations: [],
 				created_at: new Date().toISOString(),
 			};
 
@@ -97,8 +98,9 @@ export function useMessages(conversationId: string | null) {
 								accumulated += parsed.content;
 								setStreamingContent(accumulated);
 							} else if (parsed.type === "message" && parsed.message) {
-								// Final message from server
-								setMessages((prev) => [...prev, parsed.message as Message]);
+								// Final message from server, validated against the schema.
+								const finalMessage = MessageSchema.parse(parsed.message);
+								setMessages((prev) => [...prev, finalMessage]);
 								accumulated = "";
 							} else if (parsed.content && !parsed.type) {
 								// Fallback: plain content field
@@ -120,6 +122,7 @@ export function useMessages(conversationId: string | null) {
 						role: "assistant",
 						content: accumulated,
 						sources_cited: 0,
+						citations: [],
 						created_at: new Date().toISOString(),
 					};
 					setMessages((prev) => [...prev, assistantMessage]);

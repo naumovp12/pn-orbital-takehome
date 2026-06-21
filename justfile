@@ -95,6 +95,17 @@ check-frontend:
 fmt-frontend:
     docker compose exec frontend npm run fmt
 
+# Run all tests
+test: test-backend test-frontend
+
+# Backend tests
+test-backend:
+    docker compose exec backend uv run pytest backend/tests
+
+# Frontend tests
+test-frontend:
+    docker compose exec frontend npx vitest run
+
 # =============================================================================
 # Utilities
 # =============================================================================

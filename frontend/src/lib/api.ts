@@ -1,23 +1,31 @@
-import type {
-	Conversation,
-	ConversationDetail,
-	Document,
-	Message,
+import { z } from "zod";
+import {
+	type Conversation,
+	type ConversationDetail,
+	ConversationDetailSchema,
+	ConversationSchema,
+	type Document,
+	DocumentSchema,
+	type Message,
+	MessageSchema,
 } from "../types";
 
 const BASE = "/api";
 
-async function handleResponse<T>(response: Response): Promise<T> {
+async function parseJson<S extends z.ZodTypeAny>(
+	response: Response,
+	schema: S,
+): Promise<z.infer<S>> {
 	if (!response.ok) {
 		const text = await response.text().catch(() => "Unknown error");
 		throw new Error(`API error ${response.status}: ${text}`);
 	}
-	return response.json() as Promise<T>;
+	return schema.parse(await response.json());
 }
 
 export async function fetchConversations(): Promise<Conversation[]> {
 	const res = await fetch(`${BASE}/conversations`);
-	return handleResponse<Conversation[]>(res);
+	return parseJson(res, z.array(ConversationSchema));
 }
 
 export async function createConversation(): Promise<Conversation> {
@@ -26,7 +34,7 @@ export async function createConversation(): Promise<Conversation> {
 		headers: { "Content-Type": "application/json" },
 		body: JSON.stringify({ title: "New conversation" }),
 	});
-	return handleResponse<Conversation>(res);
+	return parseJson(res, ConversationSchema);
 }
 
 export async function deleteConversation(id: string): Promise<void> {
@@ -43,14 +51,14 @@ export async function fetchConversation(
 	id: string,
 ): Promise<ConversationDetail> {
 	const res = await fetch(`${BASE}/conversations/${id}`);
-	return handleResponse<ConversationDetail>(res);
+	return parseJson(res, ConversationDetailSchema);
 }
 
 export async function fetchMessages(
 	conversationId: string,
 ): Promise<Message[]> {
 	const res = await fetch(`${BASE}/conversations/${conversationId}/messages`);
-	return handleResponse<Message[]>(res);
+	return parseJson(res, z.array(MessageSchema));
 }
 
 export async function sendMessage(
@@ -79,7 +87,24 @@ export async function uploadDocument(
 		method: "POST",
 		body: formData,
 	});
-	return handleResponse<Document>(res);
+	return parseJson(res, DocumentSchema);
+}
+
+export async function fetchDocuments(
+	conversationId: string,
+): Promise<Document[]> {
+	const res = await fetch(`${BASE}/conversations/${conversationId}/documents`);
+	return parseJson(res, z.array(DocumentSchema));
+}
+
+export async function deleteDocument(documentId: string): Promise<void> {
+	const res = await fetch(`${BASE}/documents/${documentId}`, {
+		method: "DELETE",
+	});
+	if (!res.ok) {
+		const text = await res.text().catch(() => "Unknown error");
+		throw new Error(`API error ${res.status}: ${text}`);
+	}
 }
 
 export function getDocumentUrl(documentId: string): string {
