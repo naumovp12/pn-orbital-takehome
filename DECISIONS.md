@@ -7,10 +7,12 @@ I wanted to make a data-driven decision about what to do next. The clearest sign
 Be defensive: the assistant should say nothing rather than make something up. A "no answer" costs a lawyer a few minutes of searching. A fabricated clause on a £40M deal costs them the money and client - and us the account. So abstaining is the safe default. 
 
 ## How I built it
-- Cite-or-abstain prompt. Answer only from the attached documents; if the answer isn't there, reply with one exact sentence ("I couldn't find this in your documents.") and nothing else.
+- Cite-or-abstain prompt - answer only from the attached documents; if the answer isn't there, reply with one exact sentence ("I couldn't find this in your documents.") and nothing else.
 - Temperature 0. Deterministic answers, and a reliable citation format instead of a flaky one. This also helped the model to identify the citations without hiccups. Default temperature was making this process more stochastic.
 - Verbatim quotes that are verified on the backend. The model returns its quotes character-for-character; the backend checks each quote actually exists in the document and drops anything it can't find. So even if the model paraphrases or cites the wrong file, the user only ever sees citations the server confirmed. Pages are derived from the document text, not trusted from the model.
-- One-click checking. Each answer shows verified pills (document + page); clicking one shows the exact quote and jumps the viewer to that page. When it abstains, the answer gets a clear "not found" treatment. Insipired by Granola's approach.
+- I added a new `messages.citations` JSON column (with Alembic migration `002_message_citations`) so verified citations are stored with each assistant message and returned in history.
+- The SSE stream sends only prose chunks while generation is running, then emits one final message event containing the verified citations payload, then a done event.
+- Each answer shows verified pills (document + page); clicking one shows the exact quote and jumps the viewer to that page. When it abstains, the answer gets a clear "not found" treatment. Inspired by Granola's approach.
 
 ## What else I considered
 - A numeric confidence score. A number from the model is itself ungrounded; verified citations are the honest signal - either the source is there and clickable, or the answer abstains.
